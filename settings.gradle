@@ -4,7 +4,13 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         jcenter() // Warning: this repository is going to shut down soon
+        repositories {
+            flatDir {
+                dirs 'app/libs'
+            }
+        }
     }
 }
 rootProject.name = "Camera-Android"
 include ':app'
+apply from:'versions.gradle'

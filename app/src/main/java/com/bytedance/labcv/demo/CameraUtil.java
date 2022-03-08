@@ -3,8 +3,8 @@ package com.bytedance.labcv.demo;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.graphics.Camera;
 import android.graphics.ImageFormat;
+import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -15,6 +15,7 @@ import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.media.Image;
 import android.media.ImageReader;
+import android.opengl.GLSurfaceView;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Size;
@@ -24,12 +25,16 @@ import android.view.TextureView;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 
+import com.bef.effectsdk.GLTextureView;
+import com.bytedance.labcv.core.effect.EffectManager;
+
 
 import java.util.Arrays;
 
 public class CameraUtil implements ImageReader.OnImageAvailableListener{
 
-    private TextureView cameraPreview;
+    private GLSurfaceView glView;
+    private SurfaceTexture surfaceTexture;
     private String cameraId;
     private CameraManager camManager;
     private Context context;
@@ -38,6 +43,8 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
     private CameraDevice.StateCallback cameraStateCallback;
     private Size previewSize;
     private ImageReader imageReader;
+
+    private EffectManager mEffectManager;
 
     /**
      * Camera capture session's callback to handle raw frame data
@@ -67,16 +74,15 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
      * open the Camera
      */
     public void openCamera(){
-
+        startBackgroundThread();
         // permission checking required
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
             // here to request the missing permissions, and then overriding
             //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
             //                                          int[] grantResults)
             // to handle the case where the user grants the permission. See the documentation
             // for ActivityCompat#requestPermissions for more details.
+
             return;
         }
 
@@ -91,7 +97,8 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
     /**
      * setupFrontCamera
      */
-    public void setupFrontCamera() {
+    public void setupFrontCamera(GLSurfaceView glTextureView) {
+        glView = glTextureView;
         // create camera manager
         camManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
         try {
@@ -109,7 +116,7 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
                         // e.g. 4:3
                         // TODO: check camera orientation to fit the aspect ratio automatically below
                         Float previewAspectRatio = ((float) currentPreviewSize.getWidth()) / currentPreviewSize.getHeight();
-                        Float textureViewAspectRatio = ((float) cameraPreview.getHeight()) / cameraPreview.getWidth();
+                        Float textureViewAspectRatio = ((float) glView.getHeight()) / glView.getWidth();
                         Float epsilon = (float) 0.001;
                         // when camera preview and textureView has the same aspect ratio
                         if (Math.abs(previewAspectRatio - textureViewAspectRatio) < epsilon){
@@ -128,14 +135,17 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
         }
     }
 
+
+
+
     /**
      * setup TextureView for displaying camera preview
      */
-    public void setTextureView(TextureView textureView){
-        if(textureView == null){
-            System.out.println("texture view must NOT be empty");
+    public void setSurfaceTexture(SurfaceTexture texture){
+        if(texture == null){
+            System.out.println("surface texture for camera preview must NOT be empty");
         }
-        cameraPreview = textureView;
+        surfaceTexture = texture;
     }
 
 
@@ -158,8 +168,9 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
             public void onOpened(@NonNull CameraDevice cameraDevice) {
 
                 System.out.println("Camera Open successful");
-                cameraPreview.getSurfaceTexture().setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-                Surface previewSurface = new Surface(cameraPreview.getSurfaceTexture());
+                surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+                // TODO: adopt GL surface view instead of surface view
+                Surface previewSurface = new Surface(surfaceTexture);
                 try {
                     CaptureRequest.Builder captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                     captureRequestBuilder.addTarget(previewSurface);
@@ -201,14 +212,25 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
      * Background Camera Thread Handler
      */
     public void startBackgroundThread(){
-        camBackgroundHandlerThread = new HandlerThread("Camera Video Thread");
-        camBackgroundHandlerThread.start();
-        camBackgroundHandler = new Handler(camBackgroundHandlerThread.getLooper());
+        if(camBackgroundHandlerThread == null || camBackgroundHandler == null){
+            camBackgroundHandlerThread = new HandlerThread("Camera Preview Thread");
+            camBackgroundHandlerThread.start();
+            camBackgroundHandler = new Handler(camBackgroundHandlerThread.getLooper());
+        }
     }
 
-    public void stopBackgroundThread() throws InterruptedException {
-        camBackgroundHandlerThread.quitSafely();
-        camBackgroundHandlerThread.join();
+    public void stopBackgroundThread(){
+        if(camBackgroundHandlerThread != null){
+            camBackgroundHandlerThread.quitSafely();
+            try{
+                camBackgroundHandlerThread.join();
+                camBackgroundHandlerThread = null;
+                camBackgroundHandler = null;
+            } catch(InterruptedException e){
+                e.printStackTrace();
+            }
+        }
+
     }
 
 
@@ -219,5 +241,6 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
     @Override
     public void onImageAvailable(ImageReader imageReader) {
         Image image = imageReader.acquireLatestImage();
+
     }
 }
