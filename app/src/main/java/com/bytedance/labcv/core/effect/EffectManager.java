@@ -11,6 +11,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import android.text.TextUtils;
 
 import com.bytedance.labcv.core.Config;
+import com.bytedance.labcv.core.license.EffectLicenseHelper;
 import com.bytedance.labcv.core.license.EffectLicenseProvider;
 import com.bytedance.labcv.core.util.LogUtils;
 import com.bytedance.labcv.core.util.timer_record.LogTimerRecord;
@@ -53,10 +54,11 @@ public class EffectManager {
     private float mFilterIntensity = 0f;
 
 
-    public EffectManager(Context context, EffectResourceProvider mResourceProvider, EffectLicenseProvider mLicenseProvider) {
+    public EffectManager(Context context, EffectResourceProvider mResourceProvider, EffectLicenseHelper instance) {
         mContext = context;
         this.mResourceProvider = mResourceProvider;
-        this.mLicenseProvider = mLicenseProvider;
+//        this.mLicenseProvider = mLicenseProvider;
+        this.mLicenseProvider = instance;
         mRenderManager = new RenderManager();
 
     }

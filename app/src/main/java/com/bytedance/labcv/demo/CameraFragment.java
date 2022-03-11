@@ -6,35 +6,53 @@ import static android.opengl.GLSurfaceView.RENDERMODE_WHEN_DIRTY;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.ConfigurationInfo;
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
+import android.util.Size;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.view.LayoutInflater;
-import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 
 import com.bef.effectsdk.OpenGLUtils;
+import com.bytedance.labcv.core.effect.EffectManager;
+import com.bytedance.labcv.core.effect.EffectResourceHelper;
+import com.bytedance.labcv.core.license.EffectLicenseHelper;
+import com.bytedance.labcv.core.util.ImageUtil;
 import com.bytedance.labcv.core.util.LogUtils;
 import com.bytedance.labcv.demo.databinding.FragmentCameraBinding;
+import com.bytedance.labcv.demo.task.UnzipTask;
+import com.bytedance.labcv.effectsdk.BytedEffectConstants;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 public class CameraFragment extends Fragment
-        implements GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
+        implements GLSurfaceView.Renderer,
+        SurfaceTexture.OnFrameAvailableListener,
+        EffectManager.OnEffectListener {
 
     private FragmentCameraBinding binding;
     private GLSurfaceView mSurfaceView;
     private int mTextureId;
     private SurfaceTexture mSurfaceTexture;
-    private CameraDrawer mDrawer;
+    private int mTextureWidth;
+    private int mTextureHeight;
+    private int mCameraRotation;
     private Context context;
     private CameraUtil cameraUtil;
+
+    private EffectManager mEffectManager;
+    private ImageUtil mImageUtil;
+    private Boolean effectsOn;
+
+    private ImageView mDebugWindow;
 
     @Override
     public View onCreateView(
@@ -45,6 +63,8 @@ public class CameraFragment extends Fragment
         context = this.getContext();
         // initialize a camera util
         cameraUtil = new CameraUtil();
+        mImageUtil = new ImageUtil();
+        effectsOn = false;
         cameraUtil.setCameraContext(context);
         binding = FragmentCameraBinding.inflate(inflater, container, false);
         return binding.getRoot();
@@ -54,6 +74,7 @@ public class CameraFragment extends Fragment
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        mDebugWindow = binding.debugWindow;
         // set up GL Surface View for rendering camera preview
         initGLSurfaceView();
 
@@ -61,7 +82,7 @@ public class CameraFragment extends Fragment
         binding.button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-
+                effectsOn = !effectsOn;
             }
         });
     }
@@ -128,15 +149,24 @@ public class CameraFragment extends Fragment
 
         // set up camera preview as rendering source
         cameraUtil.setSurfaceTexture(mSurfaceTexture);
-        // create a camera drawer instance to render
-        mDrawer = new CameraDrawer();
 
         // set up front camera
         cameraUtil.setupFrontCamera(mSurfaceView);
         // turn on camera immediately
         cameraUtil.initCameraStateCallback();
+        // get camera rotation angle
+        mCameraRotation = cameraUtil.getCameraRotation();
         // open camera
         cameraUtil.openCamera();
+
+        // init Effects SDK Manager
+        // note: Must be in a GL thread
+        mEffectManager = new EffectManager(context, new EffectResourceHelper(context), EffectLicenseHelper.getInstance(context));
+        mEffectManager.setOnEffectListener(this);
+        int ret = mEffectManager.init();
+        if (ret != BytedEffectConstants.BytedResultCode.BEF_RESULT_SUC){
+            LogUtils.e("mEffectManager.init() fail!! error code ="+ret);
+        }
 
     }
 
@@ -152,17 +182,107 @@ public class CameraFragment extends Fragment
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
-        // Convert the input texture to a 2D texture with a positive face
-
         // Update the texture image to the most recent frame from the image stream
         mSurfaceTexture.updateTexImage();
-        // render
-        mDrawer.draw(mTextureId, true);
+
+        // initialize output texture as the same as the camera preview texture
+        int dstTexture = mTextureId;
+        // get camera preview texture width and height, based on rotation
+        mTextureWidth = cameraUtil.getPreviewSize().getWidth();
+        mTextureHeight = cameraUtil.getPreviewSize().getHeight();
+
+
+        // get current timestamp
+        long timestamp = System.currentTimeMillis();
+
+        // Convert the input texture to a 2D texture (0 rotation, front camera mirror view)
+        ImageUtil.Transition transition = new ImageUtil.Transition()
+                .rotate(mCameraRotation).flip(false, true).reverse();
+
+        int texture2D = mImageUtil.transferTextureToTexture(mTextureId,
+                BytedEffectConstants.TextureFormat.Texture_Oes, BytedEffectConstants.TextureFormat.Texure2D,
+                cameraUtil.getPreviewSize().getWidth(), cameraUtil.getPreviewSize().getHeight(), transition);
+
+
+        // get camera orientation for Effects
+        BytedEffectConstants.Rotation rotation = BytedEffectConstants.Rotation.CLOCKWISE_ROTATE_0;
+        switch(mCameraRotation){
+            case 0:
+                rotation = BytedEffectConstants.Rotation.CLOCKWISE_ROTATE_0;
+                break;
+            case 90:
+                rotation = BytedEffectConstants.Rotation.CLOCKWISE_ROTATE_90;
+                break;
+            case 180:
+                rotation = BytedEffectConstants.Rotation.CLOCKWISE_ROTATE_180;
+                break;
+            case 270:
+                rotation = BytedEffectConstants.Rotation.CLOCKWISE_ROTATE_270;
+                break;
+        }
+
+        // Prepare frame buffer texture object
+        dstTexture = mImageUtil.prepareTexture(mTextureWidth, mTextureHeight);
+
+        //    {zh} 调试代码，用于显示输入图        {en} Debugging code for displaying input diagrams
+//        Bitmap b = mImageUtil.transferTextureToBitmap( texture2D, BytedEffectConstants.TextureFormat.Texure2D, mTextureWidth, mTextureHeight);
+//        this.getActivity().runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//                mDebugWindow.setImageBitmap(b);
+//            }
+//        });
+
+
+        // set camera position for EffectManager
+        mEffectManager.setCameraPosition(true);
+        // Conduct special effects operation, output texture is 2D texture with upright face
+        boolean ret = mEffectManager.process(texture2D, dstTexture, mTextureWidth, mTextureHeight, rotation, timestamp);
+
+        if(!ret){
+            // revert back to original texture
+            dstTexture = mTextureId;
+        }
+
+        if(effectsOn){
+            // set beauty effects
+            mEffectManager.setComposeNodes(new String[]{"beauty_Android_standard"});
+            mEffectManager.updateComposerNodeIntensity("beauty_Android_standard", "smooth", 0.8f);
+        } else {
+            dstTexture = texture2D;
+        }
+
+        // Draw on screen
+        // mDrawer.draw(mTextureId, true);
+        if (!GLES20.glIsTexture(dstTexture)){
+            LogUtils.e("output texture not a valid texture");
+            return;
+        }
+
+        ImageUtil.Transition drawTransition = new ImageUtil.Transition()
+                                                .crop( ImageView.ScaleType.CENTER_CROP,
+                                                    mCameraRotation,
+                                                    mTextureWidth, mTextureHeight,
+                                                    mSurfaceView.getWidth(), mSurfaceView.getHeight());
+        mImageUtil.drawFrameOnScreen( dstTexture,
+                BytedEffectConstants.TextureFormat.Texure2D,
+                mSurfaceView.getWidth(), mSurfaceView.getHeight(),
+                drawTransition.getMatrix());
+
+
     }
+
+
 
 
     @Override
     public void onFrameAvailable(SurfaceTexture surfaceTexture) {
         mSurfaceView.requestRender();
     }
+
+    @Override
+    public void onEffectInitialized() {
+
+    }
+
 }

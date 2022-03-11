@@ -20,14 +20,9 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Size;
 import android.view.Surface;
-import android.view.TextureView;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
-
-import com.bef.effectsdk.GLTextureView;
-import com.bytedance.labcv.core.effect.EffectManager;
-
 
 import java.util.Arrays;
 
@@ -42,9 +37,10 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
     private Handler camBackgroundHandler;
     private CameraDevice.StateCallback cameraStateCallback;
     private Size previewSize;
+    private int cameraRotation;
     private ImageReader imageReader;
 
-    private EffectManager mEffectManager;
+
 
     /**
      * Camera capture session's callback to handle raw frame data
@@ -108,14 +104,20 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
                 // select front camera
                 if (camCharacter.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT) {
                     cameraId = camIds[index];
+                    cameraRotation = camCharacter.get(CameraCharacteristics.SENSOR_ORIENTATION);
                     // get a list of camera preview sizes
                     Size[] previewSizes = camCharacter.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP).getOutputSizes(ImageFormat.JPEG);
                     // match the preview size to the UI TextureView size for display, with highest quality
                     for (index = 0; index < previewSizes.length; index++) {
                         Size currentPreviewSize = previewSizes[index];
-                        // e.g. 4:3
-                        // TODO: check camera orientation to fit the aspect ratio automatically below
-                        Float previewAspectRatio = ((float) currentPreviewSize.getWidth()) / currentPreviewSize.getHeight();
+
+                        // get camera preview aspect ration
+                        Float previewAspectRatio = ((float) currentPreviewSize.getHeight()) / currentPreviewSize.getWidth();
+                        // check camera orientation and update aspect ratio calculation if needed
+                        if(cameraRotation == 90 || cameraRotation == 270){
+                            previewAspectRatio = ((float) currentPreviewSize.getWidth()) / currentPreviewSize.getHeight();
+                        }
+
                         Float textureViewAspectRatio = ((float) glView.getHeight()) / glView.getWidth();
                         Float epsilon = (float) 0.001;
                         // when camera preview and textureView has the same aspect ratio
@@ -148,6 +150,18 @@ public class CameraUtil implements ImageReader.OnImageAvailableListener{
         surfaceTexture = texture;
     }
 
+
+    /**
+     * get camera preview size, with width and height
+     */
+    public Size getPreviewSize(){
+        return previewSize;
+    }
+
+    /**
+     * get camera rotation angle - 0, 90, 180, 270
+     */
+    public int getCameraRotation(){ return cameraRotation; }
 
     /**
      * setup app context

@@ -6,6 +6,16 @@
     android:layout_height="match_parent"
     tools:context=".CameraFragment">
 
+    <ImageView
+        android:id="@+id/debug_window"
+        android:layout_width="90dp"
+        android:layout_height="120dp"
+        android:scaleType="fitCenter"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.06"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <android.opengl.GLSurfaceView
         android:id="@+id/glview"
         android:layout_width="300dp"

@@ -1,7 +1,10 @@
 package com.bytedance.labcv.demo;
 
+import android.content.Context;
 import android.os.Bundle;
 
+import com.bytedance.labcv.demo.task.RequestLicenseTask;
+import com.bytedance.labcv.demo.task.UnzipTask;
 import com.google.android.material.snackbar.Snackbar;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -17,8 +20,9 @@ import com.bytedance.labcv.demo.databinding.ActivityMainBinding;
 
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.TextView;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements UnzipTask.IUnzipViewCallback {
 
     private AppBarConfiguration appBarConfiguration;
     private ActivityMainBinding binding;
@@ -26,6 +30,10 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // unzip task
+        UnzipTask task = new UnzipTask(this);
+        task.execute(UnzipTask.DIR);
 
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
@@ -43,6 +51,7 @@ public class MainActivity extends AppCompatActivity {
                         .setAction("Action", null).show();
             }
         });
+
     }
 
     @Override
@@ -72,5 +81,47 @@ public class MainActivity extends AppCompatActivity {
         NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
         return NavigationUI.navigateUp(navController, appBarConfiguration)
                 || super.onSupportNavigateUp();
+    }
+
+    // ---------------------- Implement UnzipTask Callbacks ---------------------------
+    @Override
+    public Context getContext() {
+        return getApplicationContext();
+    }
+
+    @Override
+    public void onStartTask() {
+        System.out.println("UnzipTask started");
+    }
+
+    @Override
+    public void onEndTask(boolean result) {
+        if(!result){
+            System.out.println("ERROR: Failed to copy effects resources.");
+        }
+        checkLicenseReady();
+    }
+
+
+    public void checkLicenseReady() {
+        RequestLicenseTask task = new RequestLicenseTask(new RequestLicenseTask.ILicenseViewCallback() {
+
+            @Override
+            public Context getContext() {
+                return getApplicationContext();
+            }
+
+            @Override
+            public void onStartTask() {
+                System.out.println("license request started");
+            }
+
+            @Override
+            public void onEndTask(boolean result) {
+
+            }
+        });
+        task.execute();
+
     }
 }
