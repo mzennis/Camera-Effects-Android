@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.pm.ConfigurationInfo;
 import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
+import android.util.Pair;
 import android.util.Size;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
@@ -18,6 +19,7 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.bef.effectsdk.OpenGLUtils;
@@ -28,6 +30,7 @@ import com.bytedance.labcv.core.util.ImageUtil;
 import com.bytedance.labcv.core.util.LogUtils;
 import com.bytedance.labcv.demo.databinding.FragmentCameraBinding;
 import com.bytedance.labcv.demo.task.UnzipTask;
+import com.bytedance.labcv.demo.task.live.BroadcastManager;
 import com.bytedance.labcv.effectsdk.BytedEffectConstants;
 
 import javax.microedition.khronos.egl.EGLConfig;
@@ -54,6 +57,8 @@ public class CameraFragment extends Fragment
 
     private ImageView mDebugWindow;
 
+    private BroadcastManager broadcastManager = new BroadcastManager();
+
     @Override
     public View onCreateView(
             LayoutInflater inflater, ViewGroup container,
@@ -68,7 +73,6 @@ public class CameraFragment extends Fragment
         cameraUtil.setCameraContext(context);
         binding = FragmentCameraBinding.inflate(inflater, container, false);
         return binding.getRoot();
-
     }
 
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
@@ -168,6 +172,10 @@ public class CameraFragment extends Fragment
             LogUtils.e("mEffectManager.init() fail!! error code ="+ret);
         }
 
+        broadcastManager.create(
+                mSurfaceView.getHolder(),
+                new Pair<>(mSurfaceView.getWidth(), mSurfaceView.getHeight())
+        ); // won't work here, we have tried with our simple live stream app, and it only shows black
     }
 
     @Override
